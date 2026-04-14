@@ -1,0 +1,19 @@
+{
+  "users": [
+    {
+      "email": "gcloud2025a@gmail.com",
+      "role": "admin",
+      "name": "Admin User"
+    },
+    {
+      "email": "editor@example.com",
+      "role": "editor",
+      "name": "Editor User"
+    },
+    {
+      "email": "viewer@example.com",
+      "role": "viewer",
+      "name": "Viewer User"
+    }
+  ]
+}
