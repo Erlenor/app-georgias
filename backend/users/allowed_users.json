@@ -1,9 +1,19 @@
 {
   "users": [
     {
-      "email": "gcloud2025a@gmail.com",
+      "email": "filip.hovorka@lyceum.sk",
       "role": "admin",
-      "name": "Admin User"
+      "name": "Erlenor"
+    },
+    {
+      "email": "david.klinko@lyceum.sk",
+      "role": "admin",
+      "name": "David"
+    },
+    {
+      "email": "simon.gregan@lyceum.sk",
+      "role": "admin",
+      "name": "Simon"
     },
     {
       "email": "editor@example.com",

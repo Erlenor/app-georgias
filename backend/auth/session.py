@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 import os
 from typing import Any
+from typing import Optional, Dict
 
 import jwt
 from fastapi import Cookie, HTTPException
@@ -34,7 +35,7 @@ def decode_session_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, APP_AUTH_SECRET, algorithms=["HS256"])
 
 
-def get_current_user(session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME)) -> dict[str, Any]:
+def get_current_user(session_token: Optional[str] = Cookie(default=None, alias=SESSION_COOKIE_NAME)) -> Dict[str, Any]:
     if not session_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
