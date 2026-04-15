@@ -16,6 +16,11 @@
       "name": "Simon"
     },
     {
+      "email": "gcloud2025a@gmail.com",
+      "role": "admin",
+      "name": "GCloud User"
+    },
+    {
       "email": "editor@example.com",
       "role": "editor",
       "name": "Editor User"
