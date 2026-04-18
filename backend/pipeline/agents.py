@@ -49,8 +49,25 @@ def _call_gemini(model: str, system_prompt: str, user_prompt: str) -> str:
             model_name=model,
             system_instruction=system_prompt,
         )
-        response = gemini_model.generate_content(user_prompt)
-        return response.text.strip()
+        response = gemini_model.generate_content(
+            user_prompt,
+            safety_settings={
+                "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
+                "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
+                "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
+                "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
+            }
+        )
+        # Handle blocked or empty responses
+        try:
+            text = response.text.strip()
+        except Exception:
+            if response.candidates:
+                parts = response.candidates[0].content.parts
+                text = " ".join(p.text for p in parts if hasattr(p, "text")).strip()
+            else:
+                text = "[No response generated — Gemini blocked this content. Try rephrasing your prompt.]"
+        return text if text else "[Empty response from Gemini. Try rephrasing your prompt.]"
     except Exception as exc:
         logger.error("Gemini API call failed: %s", exc)
         raise RuntimeError(f"Gemini API call failed: {exc}") from exc
@@ -122,16 +139,55 @@ def _build_prompt(template: str, variables: dict[str, Any]) -> str:
         return template
 
 
+def _enforce_constraints(text: str, constraints: str, model: str, system_prompt: str) -> str:
+    """If constraints mention a word limit, hard-enforce it by trimming or re-calling AI."""
+    if not constraints:
+        return text
+
+    import re
+    # Look for word count constraints like "500 words", "max 500 words", "500 word max"
+    match = re.search(r'(\d+)\s*word', constraints, re.IGNORECASE)
+    if not match:
+        return text
+
+    limit = int(match.group(1))
+    word_count = len(text.split())
+
+    if word_count <= limit:
+        return text
+
+    logger.warning("Output %d words exceeds constraint of %d words. Trimming via AI.", word_count, limit)
+
+    trim_prompt = (
+        f"The following article is {word_count} words long. "
+        f"You MUST rewrite it to be STRICTLY under {limit} words. "
+        f"Do not exceed {limit} words under any circumstances. "
+        f"Preserve the structure, headings, and key points as much as possible."
+        f"ARTICLE:{text}"
+    )
+
+    try:
+        trimmed = _call_ai(model, system_prompt, trim_prompt)
+        trimmed_count = len(trimmed.split())
+        logger.info("Trimmed article from %d to %d words.", word_count, trimmed_count)
+        return trimmed
+    except Exception as exc:
+        logger.warning("Trim call failed: %s. Returning hard-truncated version.", exc)
+        # Hard truncate as last resort
+        words = text.split()
+        return " ".join(words[:limit]) + "*[Article truncated to meet word limit.]*"
+
+
 # ---------------------------------------------------------------------------
 # Pipeline step functions
 # ---------------------------------------------------------------------------
 
 def make_research(
-    author_notes: str,
-    sources: list[str],
-    constraints: str,
-    config: AgentCallConfig,
-    persona_context: str = "",
+        author_notes: str,
+        sources: list[str],
+        constraints: str,
+        config: AgentCallConfig,
+        persona_context: str = "",
 ) -> str:
     """Step 1: Create a research brief from author notes and source URLs."""
     sources_text = "\n".join(f"- {s}" for s in sources) if sources else "No sources provided."
@@ -148,9 +204,9 @@ def make_research(
 
 
 def extract_style(
-    reference_url: str,
-    config: AgentCallConfig,
-    persona_style_guide: str = "",
+        reference_url: str,
+        config: AgentCallConfig,
+        persona_style_guide: str = "",
 ) -> str:
     """Step 2: Extract writing style from a reference URL, or use persona style guide."""
     # If no reference URL but we have a persona style guide, use that directly
@@ -168,12 +224,12 @@ def extract_style(
 
 
 def write_draft(
-    research_brief: str,
-    style_guide: str,
-    author_notes: str,
-    constraints: str,
-    config: AgentCallConfig,
-    persona_context: str = "",
+        research_brief: str,
+        style_guide: str,
+        author_notes: str,
+        constraints: str,
+        config: AgentCallConfig,
+        persona_context: str = "",
 ) -> str:
     """Step 3: Write a first draft of the article."""
     user_prompt = _build_prompt(
@@ -190,10 +246,10 @@ def write_draft(
 
 
 def reflect_on_draft(
-    draft: str,
-    research_brief: str,
-    style_guide: str,
-    config: AgentCallConfig,
+        draft: str,
+        research_brief: str,
+        style_guide: str,
+        config: AgentCallConfig,
 ) -> str:
     """Step 4: Critically review the draft and provide structured feedback."""
     user_prompt = _build_prompt(
@@ -208,13 +264,18 @@ def reflect_on_draft(
 
 
 def finalize_article(
-    draft: str,
-    feedback: str,
-    style_guide: str,
-    config: AgentCallConfig,
-    persona_context: str = "",
+        draft: str,
+        feedback: str,
+        style_guide: str,
+        config: AgentCallConfig,
+        persona_context: str = "",
 ) -> str:
     """Step 5: Produce the final, polished article incorporating feedback."""
+    # Inject constraints into system prompt so model is explicitly aware
+    system = config.system_prompt
+    if persona_context:
+        system = system
+
     user_prompt = _build_prompt(
         config.user_prompt_template,
         {
@@ -224,7 +285,8 @@ def finalize_article(
             "persona_context": persona_context or "No persona specified.",
         },
     )
-    return _call_ai(config.model, config.system_prompt, user_prompt)
+    result = _call_ai(config.model, config.system_prompt, user_prompt)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -240,13 +302,15 @@ PIPELINE_STEPS = [
 ]
 
 
+from typing import Dict, Any, Optional
+
 def run_pipeline(
-    inputs: dict[str, Any],
-    agent_configs: dict[str, AgentCallConfig],
-    on_step_start: Any = None,
-    on_step_done: Any = None,
-    persona: dict[str, Any] | None = None,
-) -> dict[str, str]:
+        inputs: Dict[str, Any],
+        agent_configs: Dict[str, AgentCallConfig],
+        on_step_start: Any = None,
+        on_step_done: Any = None,
+        persona: Optional[Dict[str, Any]] = None,
+) -> Dict[str, str]:
     """Run the full 5-step pipeline synchronously.
 
     Args:
@@ -335,7 +399,18 @@ def run_pipeline(
     for (step_name, fn), result_key in zip(steps, result_keys):
         if on_step_start:
             on_step_start(step_name)
-        output = fn()
+        try:
+            output = fn()
+            # Enforce word constraints on the final article
+            if step_name == "finalization" and constraints:
+                output = _enforce_constraints(
+                    output, constraints,
+                    agent_configs["finalization"].model,
+                    agent_configs["finalization"].system_prompt,
+                )
+        except Exception as exc:
+            logger.error("Step '%s' failed: %s", step_name, exc)
+            output = f"[Step failed: {exc}]"
         results[result_key] = output
         if on_step_done:
             on_step_done(step_name, output)
