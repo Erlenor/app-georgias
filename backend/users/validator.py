@@ -13,9 +13,7 @@ def _load_users() -> list[dict]:
     return data.get("users", [])
 
 
-from typing import Optional
-
-def validate_user(email: str) -> Optional[dict]:
+def validate_user(email: str) -> dict | None:
     """Check if an email is in the allowed users list.
 
     Returns the user record (email, role, name) if found, or None if unauthorized.

@@ -1,21 +1,37 @@
-"""Thales — FastAPI backend entry point."""
+"""App Georgias — FastAPI backend entry point."""
+
+import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-import os
 
-# Load environment variables
+# Load environment variables before importing modules that use them
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from auth.google import router as auth_router
+from articles.router import router as articles_router
+from pipeline.router import router as pipeline_router
+from agent_config.router import router as agent_config_router
+from personas.router import router as personas_router
 
-app = FastAPI(title="Thales API", version="1.0.0")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
+app = FastAPI(
+    title="App Georgias API",
+    description="AI-powered article generation pipeline",
+    version="1.0.0",
+)
+
+# CORS configuration — driven by environment
 allowed_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000")
-cors_origins = [origin.strip() for origin in allowed_origins.split(",") if origin.strip()]
+cors_origins = [o.strip() for o in allowed_origins.split(",") if o.strip()]
 
-# CORS — env-driven origins for dev/staging/prod
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -24,10 +40,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register routers
+# Register all routers
 app.include_router(auth_router)
+app.include_router(articles_router)
+app.include_router(pipeline_router)
+app.include_router(agent_config_router)
+app.include_router(personas_router)
 
 
 @app.get("/")
-def health():
-    return {"status": "ok", "service": "thales-api"}
+def health() -> dict:
+    return {"status": "ok", "service": "app-georgias-api", "version": "1.0.0"}

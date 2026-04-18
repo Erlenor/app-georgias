@@ -1,11 +1,14 @@
 [project]
-name = "thales-backend"
-version = "0.1.0"
-description = "FastAPI backend for Thales template"
+name = "app-georgias-backend"
+version = "1.0.0"
+description = "FastAPI backend for App Georgias — AI article generation pipeline"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
     "google-auth",
+    "google-cloud-firestore",
+    "google-cloud-secret-manager",
+    "google-generativeai",
     "httpx",
     "pydantic",
     "PyJWT",
@@ -16,3 +19,14 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+]

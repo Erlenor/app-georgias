@@ -1,1 +1,1 @@
-# Auth module
+# Auth package

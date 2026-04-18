@@ -2,6 +2,7 @@
 
 from secrets import token_urlsafe
 import os
+import logging
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -18,6 +19,8 @@ from auth.session import (
     get_current_user,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
@@ -33,7 +36,7 @@ class AuthCodePayload(BaseModel):
 
 
 @router.get("/state")
-def auth_state(response: Response):
+def auth_state(response: Response) -> dict:
     state = token_urlsafe(24)
     response.set_cookie(
         key=OAUTH_STATE_COOKIE_NAME,
@@ -47,7 +50,7 @@ def auth_state(response: Response):
 
 
 @router.post("/google")
-async def google_auth(payload: AuthCodePayload, request: Request, response: Response):
+async def google_auth(payload: AuthCodePayload, request: Request, response: Response) -> dict:
     """Exchange Google auth code for tokens, verify identity, and check authorization."""
     try:
         expected_state = request.cookies.get(OAUTH_STATE_COOKIE_NAME)
@@ -68,16 +71,13 @@ async def google_auth(payload: AuthCodePayload, request: Request, response: Resp
             token_data = token_response.json()
 
         if "error" in token_data:
-            print(f"Token exchange error: {token_data}")
-            raise HTTPException(
-                status_code=400, detail="Failed to exchange authorization code"
-            )
+            logger.warning("Token exchange error: %s", token_data)
+            raise HTTPException(status_code=400, detail="Failed to exchange authorization code")
 
         id_token_jwt = token_data.get("id_token")
         if not id_token_jwt:
             raise HTTPException(status_code=400, detail="Missing ID token")
 
-        # 2. Verify the ID token signature and issuer
         idinfo = id_token.verify_oauth2_token(
             id_token_jwt, google_requests.Request(), GOOGLE_CLIENT_ID
         )
@@ -86,9 +86,7 @@ async def google_auth(payload: AuthCodePayload, request: Request, response: Resp
         if not idinfo.get("email_verified", False):
             raise HTTPException(status_code=401, detail="Unverified Google email")
 
-        # 3. Check if the user is in the allowed list
         allowed_user = validate_user(email)
-
         if not allowed_user:
             return {
                 "success": False,
@@ -112,29 +110,26 @@ async def google_auth(payload: AuthCodePayload, request: Request, response: Resp
         )
         response.delete_cookie(OAUTH_STATE_COOKIE_NAME)
 
-        return {
-            "success": True,
-            "user": user,
-        }
+        return {"success": True, "user": user}
 
-    except ValueError as e:
-        print(f"Token validation failed: {e}")
-        raise HTTPException(status_code=401, detail="Invalid token")
-    except httpx.TimeoutException as e:
-        raise HTTPException(status_code=504, detail="Google token exchange timed out") from e
+    except ValueError as exc:
+        logger.warning("Token validation failed: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid token") from exc
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="Google token exchange timed out") from exc
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"Auth error: {e}")
-        raise HTTPException(status_code=500, detail="Authentication server error")
+    except Exception as exc:
+        logger.error("Auth error: %s", exc)
+        raise HTTPException(status_code=500, detail="Authentication server error") from exc
 
 
 @router.get("/me")
-def me(user: dict = Depends(get_current_user)):
+def me(user: dict = Depends(get_current_user)) -> dict:
     return {"authenticated": True, "user": user}
 
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(response: Response) -> dict:
     response.delete_cookie(SESSION_COOKIE_NAME)
     return {"success": True}

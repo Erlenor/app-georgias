@@ -1,22 +1,22 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect } from "react";
-import type { ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
-
-export interface User {
-  name: string;
-  email: string;
-  picture: string;
-  role: string;
-}
+import { getMe, logout as apiLogout } from "@/lib/api";
+import type { User } from "@/types";
 
 interface AuthContextType {
   user: User | null;
-  login: () => Promise<void>;
-  logout: () => Promise<void>;
   loading: boolean;
   isAuthenticated: boolean;
+  login: () => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,74 +25,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   useEffect(() => {
-    const initAuth = async () => {
-      try {
-        const response = await fetch(`${API_URL}/api/auth/me`, {
-          method: "GET",
-          credentials: "include",
-        });
-
-        if (!response.ok) {
-          setUser(null);
-          return;
-        }
-
-        const data = await response.json();
-        setUser(data.user ?? null);
-      } catch {
-        setUser(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     void initAuth();
-  }, [API_URL]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const login = async () => {
-    setLoading(true);
+  async function initAuth() {
     try {
-      const response = await fetch(`${API_URL}/api/auth/me`, {
-        method: "GET",
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        setUser(null);
-        return;
-      }
-
-      const data = await response.json();
-      setUser(data.user ?? null);
-      router.push("/home");
+      const data = await getMe();
+      setUser((data.user as User) ?? null);
+    } catch {
+      setUser(null);
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const logout = async () => {
-    await fetch(`${API_URL}/api/auth/logout`, {
-      method: "POST",
-      credentials: "include",
-    });
-    setUser(null);
-    router.push("/");
-  };
+  async function login() {
+    setLoading(true);
+    try {
+      const data = await getMe();
+      setUser((data.user as User) ?? null);
+      router.push("/generator");
+    } catch {
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function logout() {
+    try {
+      await apiLogout();
+    } finally {
+      setUser(null);
+      router.push("/");
+    }
+  }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, isAuthenticated: !!user }}>
+    <AuthContext.Provider
+      value={{ user, loading, isAuthenticated: !!user, login, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
 
 export function useAuth(): AuthContextType {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
 }
